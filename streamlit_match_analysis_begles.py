@@ -2,6 +2,10 @@
 # Code adapté pour Streamlit 1.50.0 (version ancienne)
 # Ajout de la fonctionnalité d'export de playlist clips
 
+# Masque le lien "View source" (Voir le code source)
+st.set_option('client.toolbarMode', 'minimal') 
+# ----------------------------------------
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
