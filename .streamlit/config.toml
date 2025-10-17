@@ -1,0 +1,10 @@
+[browser]
+# Masque la barre latérale pour tous les utilisateurs
+# non-développeurs, ce qui supprime le bouton "Voir le code source" et les autres options de dev.
+gatherUsageStats = false 
+toolbarMode = "minimal"
+
+[server]
+# Ajouté au cas où vous voudriez aussi masquer le bouton "Manage app" pour les utilisateurs
+enableCORS = true
+enableXsrfProtection = true
