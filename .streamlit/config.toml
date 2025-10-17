@@ -1,10 +1,11 @@
 [browser]
-# Masque la barre latérale pour tous les utilisateurs
-# non-développeurs, ce qui supprime le bouton "Voir le code source" et les autres options de dev.
-gatherUsageStats = false 
+# Masque la barre latérale pour tous les utilisateurs non-développeurs,
+# y compris le bouton 'Edit' (Crayon) et le bouton 'Settings' (Paramètres).
 toolbarMode = "minimal"
 
 [server]
-# Ajouté au cas où vous voudriez aussi masquer le bouton "Manage app" pour les utilisateurs
+# Empêche l'affichage du bouton "Fork/Lien Github" sur la version déployée.
+# Cela rend l'application visible SANS possibilité de cloner le code source pour les utilisateurs.
+headless = true
 enableCORS = true
 enableXsrfProtection = true
