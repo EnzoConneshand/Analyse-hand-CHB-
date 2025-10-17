@@ -1,10 +1,6 @@
 # streamlit_match_analysis_begles.py
 # Code adapté pour Streamlit 1.50.0 (version ancienne)
-# Ajout de la fonctionnalité d'export de playlist clips
-
-# Masque le lien "View source" (Voir le code source)
-st.set_option('client.toolbarMode', 'minimal') 
-# ----------------------------------------
+# Correction de l'erreur NameError et ajout de l'export de playlist.
 
 import streamlit as st
 import pandas as pd
@@ -17,6 +13,12 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 import numpy as np 
 import re 
+
+# --- PARAMÈTRE D'AFFICHAGE (CORRIGÉ) ---
+# Masque le lien "View source" (Voir le code source) après l'importation de 'st'
+st.set_option('client.toolbarMode', 'minimal') 
+# ----------------------------------------
+
 
 # --- Configuration de la page ---
 st.set_page_config(page_title="Analyse match - Carquefou HB", layout="wide")
@@ -187,7 +189,6 @@ if uploaded_file:
     
     # Paramètres Vidéo (pour la sidebar)
     st.sidebar.header("📺 Paramètres Vidéo")
-    # Utilisation de la variable globale
     youtube_url_global = st.sidebar.text_input(
         "Lien YouTube du match :", 
         value="", 
@@ -256,7 +257,7 @@ if uploaded_file:
     if video_id and selected_time is not None:
         clip_url = f"https://www.youtube.com/embed/{video_id}?start={start_time_clip}&end={end_time_clip}&autoplay=1"
         
-        # Pas de 'key' pour la v1.50.0
+        # Correction pour Streamlit 1.50.0: Pas de 'key' ici 
         st.components.v1.iframe(clip_url, height=500, scrolling=False) 
         
         st.info("⚠️ Si le clip ne démarre pas, cliquez sur le bouton 'Play' (▶️). L'enchaînement est **manuel**.")
@@ -384,7 +385,222 @@ if uploaded_file:
         
     st.markdown("---")
 
+    # ---------------------- DÉBUT DES ONGLETS ----------------------
+    tab1, tab2 = st.tabs(["📊 Vue d'ensemble et indicateurs", "👥 Données joueuses : Comparaison détaillée"])
+
+    # --- TAB 1: VUE D'ENSEMBLE ---
+    with tab1:
+        st.subheader("📊 Indicateurs clés (Général)")
+
+        nb_actions = len(filtered_df)
+        nb_tirs = filtered_df["Tir ?"].str.contains("Tir", case=False, na=False).sum() if "Tir ?" in filtered_df.columns else 0
+        nb_buts = filtered_df["But ?"].str.contains("But", case=False, na=False).sum() if "But ?" in filtered_df.columns else 0
+        nb_parades = filtered_df["But ?"].str.contains("Parade", case=False, na=False).sum() if "But ?" in filtered_df.columns else 0
+        nb_pertes = filtered_df["Tir ?"].str.contains("Perte", case=False, na=False).sum() if "Tir ?" in filtered_df.columns else 0
+
+        col1_t1, col2_t1, col3_t1, col4_t1, col5_t1 = st.columns(5)
+        col1_t1.metric("⚡ Actions", nb_actions)
+        col2_t1.metric("🎯 Tirs", nb_tirs)
+        col3_t1.metric("🥅 Buts", nb_buts)
+        col4_t1.metric("🧤 Parades", nb_parades)
+        col5_t1.metric("❌ Pertes", nb_pertes)
+
+        taux_reussite = (nb_buts / nb_tirs) * 100 if nb_tirs > 0 else 0
+        taux_parade = (nb_parades / nb_tirs) * 100 if nb_tirs > 0 else 0
+        if nb_tirs > 0:
+            st.markdown(f"**Taux de réussite :** {taux_reussite:.1f}% — **Taux de parade :** {taux_parade:.1f}%")
+
+        # ---------------------- COMPARISON DE JOUEUSES (Résumé) ----------------------
+        st.subheader("👥 Résumé Tirs/Buts par joueuse")
+        if "Joueurs" in filtered_df.columns:
+            compare_df = filtered_df.copy()
+            resume = compare_df.groupby("Joueurs").agg({
+                "Tir ?": lambda x: x.str.contains("Tir", case=False, na=False).sum(),
+                "But ?": lambda x: x.str.contains("But", case=False, na=False).sum()
+            }).reset_index()
+            resume["Taux de réussite (%)"] = (resume["But ?"] / resume["Tir ?"].replace(0, np.nan)) * 100
+            resume = resume[resume["Tir ?"] > 0].sort_values(by="Tir ?", ascending=False)
+            
+            st.dataframe(resume.style.format({"Taux de réussite (%)": "{:.1f}%"}), hide_index=True)
+
+            fig_compare, ax = plt.subplots(figsize=(10, 6))
+            resume.plot(x="Joueurs", y=["Tir ?", "But ?"], kind="bar", ax=ax, title="Tirs et Buts par Joueuse")
+            plt.xticks(rotation=45, ha='right')
+            plt.tight_layout()
+            st.pyplot(fig_compare)
+            plt.close(fig_compare)
+        else:
+            st.info("💡 La colonne 'Joueurs' est absente du CSV.")
+
+        # ---------------------- HEATMAP DES SECTEURS ----------------------
+        fig_heatmap = None
+        if "Secteur" in df.columns:
+            st.subheader("🔥 Heatmap des tirs par secteur de jeu (Filtré)")
+
+            st.write("Affiner l'affichage de la heatmap :")
+            phase_heat = st.multiselect("Phase(s) de jeu pour Heatmap :", sorted(df["Phase de jeu"].dropna().unique()), key='phase_heat_tab1')
+            joueur_heat = st.multiselect("Joueuse(s) pour Heatmap :", all_joueurs, key='joueur_heat_tab1')
+
+            data_heat = filtered_df.copy()
+            if phase_heat:
+                data_heat = data_heat[data_heat["Phase de jeu"].isin(phase_heat)]
+            if joueur_heat:
+                data_heat = data_heat[data_heat["Joueurs"].isin(joueur_heat)]
+
+            ordre_secteurs = ["1 G", "1-2 G", "2-3 G", "3-3", "3-2 D", "2-1 D", "1 D"]
+            tirs_zone = data_heat[data_heat["Secteur"].isin(ordre_secteurs)]
+
+            if not tirs_zone.empty:
+                stats_secteur = tirs_zone.groupby("Secteur").agg(
+                    total_tirs=("Tir ?", lambda x: x.str.contains("Tir", case=False, na=False).sum()),
+                    nb_buts=("But ?", lambda x: x.str.contains("But", case=False, na=False).sum())
+                ).reindex(ordre_secteurs).fillna(0)
+                stats_secteur["Taux_reussite"] = (stats_secteur["nb_buts"] / stats_secteur["total_tirs"].replace(0, np.nan)) * 100
+                stats_secteur["Taux_reussite"] = stats_secteur["Taux_reussite"].fillna(0)
+
+                fig_heatmap, ax = plt.subplots(figsize=(8, 2))
+                cmap = plt.cm.Reds
+                for i, secteur in enumerate(ordre_secteurs):
+                    taux = stats_secteur.loc[secteur, "Taux_reussite"]
+                    nb_tirs = stats_secteur.loc[secteur, "total_tirs"]
+                    color = cmap(taux / 100)
+                    rect = plt.Rectangle((i, 0), 1, 1, color=color, ec="black")
+                    ax.add_patch(rect)
+                    ax.text(i + 0.5, 0.5, f"{secteur}\n{int(nb_tirs)} tirs\n{taux:.0f}%", 
+                            ha="center", va="center", fontsize=9, color="black")
+                ax.set_xlim(0, len(ordre_secteurs))
+                ax.set_ylim(0, 1)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                ax.set_title("Zones de tir (gauche → droite du but)")
+                st.pyplot(fig_heatmap)
+                plt.close(fig_heatmap)
+            else:
+                st.info("⚠️ Aucun tir identifié dans les secteurs sélectionnés pour la Heatmap.")
+        else:
+            st.info("🗺️ La colonne 'Secteur' est absente du CSV.")
+
+        # ---------------------- CONTEXTES ----------------------
+        if contexte_cols:
+            st.subheader("🎯 Analyse des contextes de jeu")
+            for c in contexte_cols:
+                st.write(f"**{c}**")
+                fig_ctx, ax = plt.subplots()
+                filtered_df[c].value_counts().plot(kind="bar", ax=ax)
+                ax.set_title(f"Distribution : {c}")
+                plt.xticks(rotation=45, ha='right')
+                plt.tight_layout()
+                st.pyplot(fig_ctx)
+                plt.close(fig_ctx)
+
+    # --- TAB 2: COMPARAISON DÉTAILLÉE DES JOUEUSES ---
+    with tab2:
+        st.header("Analyse comparative des joueuses")
+        
+        selected_players = st.multiselect("Sélectionnez les joueuses à comparer :", all_joueurs, key='player_compare_tab2')
+
+        if len(selected_players) >= 1:
+            
+            num_columns = min(len(selected_players), 3) 
+            col_list = st.columns(num_columns)
+
+            for i, joueur_name in enumerate(selected_players):
+                if i >= num_columns: 
+                    if i == num_columns:
+                         st.warning("Affichage côte à côte limité aux 3 premières joueuses sélectionnées.")
+                    break
+                
+                with col_list[i]:
+                    st.markdown(f"### 🤾‍♀️ {joueur_name}")
+                    
+                    player_df = filtered_df[filtered_df["Joueurs"] == joueur_name].copy()
+                    
+                    if player_df.empty:
+                         st.warning("Aucune action trouvée pour cette joueuse avec les filtres généraux appliqués.")
+                         continue
+                         
+                    # ---------------------- Indicateurs Clés pour la joueuse ----------------------
+                    p_nb_tirs = player_df["Tir ?"].str.contains("Tir", case=False, na=False).sum() if "Tir ?" in player_df.columns else 0
+                    p_nb_buts = player_df["But ?"].str.contains("But", case=False, na=False).sum() if "But ?" in player_df.columns else 0
+                    p_taux_reussite = (p_nb_buts / p_nb_tirs * 100) if p_nb_tirs > 0 else 0
+
+                    st.metric("🎯 Tirs", p_nb_tirs)
+                    st.metric("🥅 Buts", p_nb_buts)
+                    st.metric("Taux de réussite", f"{p_taux_reussite:.1f}%")
+                    
+                    st.markdown("---")
+
+                    # ---------------------- Statistiques des Tirs Détaillées ----------------------
+                    if "Secteur" in player_df.columns:
+                        st.markdown("**Statistiques de tir par secteur**")
+                        
+                        stats_secteur = player_df.groupby("Secteur").agg(
+                            Tirs=("Tir ?", lambda x: x.str.contains("Tir", case=False, na=False).sum()),
+                            Buts=("But ?", lambda x: x.str.contains("But", case=False, na=False).sum())
+                        ).reset_index()
+                        stats_secteur["Réussite (%)"] = (stats_secteur["Buts"] / stats_secteur["Tirs"].replace(0, np.nan)) * 100
+                        stats_secteur = stats_secteur[stats_secteur["Tirs"] > 0]
+                        
+                        st.dataframe(
+                            stats_secteur.sort_values(by="Tirs", ascending=False).style.format({"Réussite (%)": "{:.1f}%"}), 
+                            hide_index=True
+                        )
+                    
+                    st.markdown("---")
+
+                    # ---------------------- Distribution des Phases de Jeu ----------------------
+                    if "Phase de jeu" in player_df.columns:
+                        st.markdown("**Actions par phase de jeu**")
+                        
+                        phase_counts = player_df["Phase de jeu"].value_counts().reset_index()
+                        phase_counts.columns = ["Phase de jeu", "Actions"]
+                        
+                        fig_phase, ax = plt.subplots(figsize=(6, 4))
+                        sns.barplot(x="Actions", y="Phase de jeu", data=phase_counts, ax=ax, palette="viridis")
+                        ax.set_title("Distribution des actions")
+                        st.pyplot(fig_phase)
+                        plt.close(fig_phase)
+                        
+                    st.markdown("---")
+                    
+                    # ---------------------- Analyse des Duels Réussis/Perdus (colonne "Duel") ----------------------
+                    if "Duel" in player_df.columns:
+                        st.markdown("**Distribution des Duels (Réussis vs. Perdus)**")
+
+                        duel_specific_df = player_df.dropna(subset=["Duel"])
+
+                        if not duel_specific_df.empty:
+                            
+                            duel_counts = duel_specific_df['Duel'].value_counts().reset_index()
+                            duel_counts.columns = ["Résultat", "Total"]
+                            
+                            color_map = {}
+                            if "Réussi" in duel_counts["Résultat"].values:
+                                color_map["Réussi"] = "green"
+                            if "Perdu" in duel_counts["Résultat"].values:
+                                color_map["Perdu"] = "red"
+                            
+                            fig_duel, ax = plt.subplots(figsize=(6, 4))
+                            sns.barplot(x="Résultat", y="Total", data=duel_counts, ax=ax, 
+                                        palette=color_map if color_map else "viridis")
+                            ax.set_title(f"Duels Joués - {len(duel_specific_df)} total")
+                            ax.set_xlabel("")
+                            ax.tick_params(axis='x', rotation=45)
+                            st.pyplot(fig_duel)
+                            plt.close(fig_duel)
+                            
+                        else:
+                            st.info("Aucun Duel spécifique trouvé pour cette joueuse.")
+                    else:
+                        st.info("La colonne 'Duel' n'est pas présente dans le fichier CSV.")
+                    
+                    st.markdown("---")
+
+        else:
+            st.info("Sélectionnez au moins une joueuse dans la liste pour démarrer l'analyse comparative.")
+            
     # ---------------------- SECTION D'EXPORT DE PLAYLIST CLIPS ----------------------
+    st.markdown("---")
     st.header("📤 Export des clips vidéo pour partage")
     
     def generate_clip_playlist(filtered_data, youtube_full_url):
@@ -458,7 +674,7 @@ if uploaded_file:
         st.caption("Le fichier TXT contient les liens YouTube horodatés pour les clips cochés.")
 
 
-    # ---------------------- RAPPORT PDF (Réutilisation du code précédent) ----------------------
+    # ---------------------- RAPPORT PDF (Final) ----------------------
     
     def generate_pdf():
         global nb_actions, nb_tirs, nb_buts, nb_parades, nb_pertes, taux_reussite, taux_parade, fig_compare, fig_heatmap
@@ -467,7 +683,6 @@ if uploaded_file:
         doc = SimpleDocTemplate(buffer, pagesize=A4)
         styles = getSampleStyleSheet()
         story = []
-        # ... (Le reste de la fonction generate_pdf() est inchangé)
         
         story.append(Paragraph("Rapport d'analyse - Match Carquefou HB", styles["Title"]))
         story.append(Spacer(1, 12))
