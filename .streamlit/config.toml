@@ -1,11 +1,15 @@
 [browser]
-# Masque la barre latérale pour tous les utilisateurs non-développeurs,
-# y compris le bouton 'Edit' (Crayon) et le bouton 'Settings' (Paramètres).
+# Masque la barre latérale et les options pour les utilisateurs non-développeurs
 toolbarMode = "minimal"
 
 [server]
-# Empêche l'affichage du bouton "Fork/Lien Github" sur la version déployée.
-# Cela rend l'application visible SANS possibilité de cloner le code source pour les utilisateurs.
+# Désactive l'affichage de l'interface de développement web pour les utilisateurs
+# C'est souvent le paramètre le plus efficace pour cacher le bouton 'Fork' et le lien GitHub
 headless = true
 enableCORS = true
 enableXsrfProtection = true
+
+[global]
+# Ce paramètre supprime explicitement les liens du code source
+# C'est la ligne la plus importante pour la sécurité contre le partage de code
+showSidebar = false
